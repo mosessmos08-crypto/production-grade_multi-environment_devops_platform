@@ -43,6 +43,7 @@ jobs:
   deploy-staging:
     if: github.event_name == 'pull_request' && github.base_ref == 'staging'
     runs-on: ubuntu-latest
+    needs: build
     
 
     environment:
