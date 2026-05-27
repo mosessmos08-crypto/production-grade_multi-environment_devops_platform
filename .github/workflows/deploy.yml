@@ -58,11 +58,14 @@ jobs:
           script: |
             IMAGE="mosesclouddev/devops-app:latest"
 
-            docker stop devops-app || true
-            docker rm devops-app || true
+            sudo yum install -y docker || true
+            sudo systemctl start docker || true
 
-            docker pull $IMAGE
-            docker run -d -p 5000:5000 --name devops-app --restart always $IMAGE
+            sudo docker stop devops-app || true
+            sudo docker rm devops-app || true
+
+            sudo docker pull $IMAGE
+            sudo docker run -d -p 5000:5000 --name devops-app --restart always $IMAGE
 
 
 # 🔹 DEPLOY TO PROD (WITH APPROVAL)
