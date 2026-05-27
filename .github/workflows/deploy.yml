@@ -11,7 +11,7 @@ jobs:
 
 # 🔹 BUILD & PUSH IMAGE (DEV ONLY)
   build:
-    if: github.ref == 'refs/heads/dev'
+    
     runs-on: ubuntu-latest
     
     environment:
@@ -38,7 +38,7 @@ jobs:
 
 # 🔹 DEPLOY TO STAGING (AFTER MERGE → staging branch)
   deploy-staging:
-    if: github.ref == 'refs/heads/staging'
+    
     runs-on: ubuntu-latest
     needs: build   # 👈 important chain
 
@@ -74,7 +74,7 @@ jobs:
 
 # 🔹 DEPLOY TO PROD (AFTER MERGE → prod branch)
   deploy-prod:
-    if: github.ref == 'refs/heads/prod'
+    
     runs-on: ubuntu-latest
     needs: deploy-staging   # 👈 staging apram dhaan prod
 
