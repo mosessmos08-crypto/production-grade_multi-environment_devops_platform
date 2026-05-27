@@ -59,7 +59,7 @@ jobs:
             sudo docker run -d -p 5000:5000 --name devops-app --restart always $IMAGE
 
 
-  # DEPLOY TO PROD (push to prod branch )
+  # DEPLOY TO PROD (push to prod branch)
   deploy-prod:
     if: github.ref_name == 'prod'   # ✅ No 'needs: deploy-staging' — different branch
     runs-on: ubuntu-latest
