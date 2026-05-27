@@ -12,7 +12,7 @@ on:
 
 jobs:
 
-# 🔹 BUILD & TEST ( DEV )
+# 🔹 BUILD & TEST (DEV)
   build:
     if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
