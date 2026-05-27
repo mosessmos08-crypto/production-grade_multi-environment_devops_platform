@@ -4,21 +4,18 @@ on:
   push:
     branches:
       - dev
-
-  pull_request:
-    branches:
       - staging
-      - main
+      - prod
 
 jobs:
 
-# 🔹 BUILD & TEST (DEV)
+# 🔹 BUILD & PUSH IMAGE (DEV ONLY)
   build:
     if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
-
+    
     environment:
-      name: dev
+        name: dev
 
     steps:
       - name: Checkout Code
@@ -39,15 +36,14 @@ jobs:
           docker push mosesclouddev/devops-app:latest
 
 
-# 🔹 DEPLOY TO STAGING
+# 🔹 DEPLOY TO STAGING (AFTER MERGE → staging branch)
   deploy-staging:
-    if: github.event_name == 'pull_request' && github.base_ref == 'staging'
+    if: github.ref == 'refs/heads/staging'
     runs-on: ubuntu-latest
-    needs: build
-    
+    needs: build   # 👈 important chain
 
     environment:
-      name: staging
+        name: staging
 
     steps:
       - name: Deploy to Staging EC2
@@ -59,8 +55,15 @@ jobs:
           script: |
             IMAGE="mosesclouddev/devops-app:latest"
 
-            sudo yum install -y docker || true
-            sudo systemctl start docker || true
+            # install docker if not exists
+            if ! command -v docker &> /dev/null
+            then
+              sudo yum update -y
+              sudo yum install -y docker
+            fi
+
+            sudo systemctl start docker
+            sudo systemctl enable docker
 
             sudo docker stop devops-app || true
             sudo docker rm devops-app || true
@@ -69,14 +72,14 @@ jobs:
             sudo docker run -d -p 5000:5000 --name devops-app --restart always $IMAGE
 
 
-# 🔹 DEPLOY TO PROD (WITH APPROVAL)
+# 🔹 DEPLOY TO PROD (AFTER MERGE → prod branch)
   deploy-prod:
-    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    if: github.ref == 'refs/heads/prod'
     runs-on: ubuntu-latest
-    needs: build
+    needs: deploy-staging   # 👈 staging apram dhaan prod
 
     environment:
-      name: prod   
+        name: prod
 
     steps:
       - name: Deploy to Production EC2
@@ -88,8 +91,17 @@ jobs:
           script: |
             IMAGE="mosesclouddev/devops-app:latest"
 
-            docker stop app || true
-            docker rm app || true
+            if ! command -v docker &> /dev/null
+            then
+              sudo yum update -y
+              sudo yum install -y docker
+            fi
 
-            docker pull $IMAGE
-            docker run -d -p 5000:5000 --name devops-app --restart always $IMAGE
+            sudo systemctl start docker
+            sudo systemctl enable docker
+
+            sudo docker stop devops-app || true
+            sudo docker rm devops-app || true
+
+            sudo docker pull $IMAGE
+            sudo docker run -d -p 5000:5000 --name devops-app --restart always $IMAGE
