@@ -1,0 +1,91 @@
+name: Multi-Env DevOps Pipeline
+
+on:
+  push:
+    branches:
+      - dev
+
+  pull_request:
+    branches:
+      - staging
+      - main
+
+jobs:
+
+# 🔹 BUILD & TEST (DEV)
+  build:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+
+    environment:
+      name: dev
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Build Docker Image
+        run: |
+          docker build -t mosesclouddev/devops-app:${{ github.sha }} .
+
+      - name: Login to Docker Hub
+        run: |
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+      - name: Push Image
+        run: |
+          docker tag mosesclouddev/devops-app:${{ github.sha }} mosesclouddev/devops-app:latest
+          docker push mosesclouddev/devops-app:${{ github.sha }}
+          docker push mosesclouddev/devops-app:latest
+
+
+# 🔹 DEPLOY TO STAGING
+  deploy-staging:
+    if: github.event_name == 'pull_request' && github.base_ref == 'staging'
+    runs-on: ubuntu-latest
+    needs: build
+
+    environment:
+      name: staging
+
+    steps:
+      - name: Deploy to Staging EC2
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.STAGE_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            IMAGE="your-dockerhub-username/app:latest"
+
+            docker stop app || true
+            docker rm app || true
+
+            docker pull $IMAGE
+            docker run -d -p 80:80 --name app --restart always $IMAGE
+
+
+# 🔹 DEPLOY TO PROD (WITH APPROVAL)
+  deploy-prod:
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    needs: build
+
+    environment:
+      name: prod   # 🔥 approval gate
+
+    steps:
+      - name: Deploy to Production EC2
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            IMAGE="your-dockerhub-username/app:latest"
+
+            docker stop app || true
+            docker rm app || true
+
+            docker pull $IMAGE
+            docker run -d -p 80:80 --name app --restart always $IMAGE
