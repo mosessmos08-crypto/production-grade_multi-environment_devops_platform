@@ -6,7 +6,7 @@ app = Flask(__name__)
 def home():
     return "Hello from DevOps Platform"
 
-@app.route("/health")       # ✅ Add this
+@app.route("/health")      
 def health():
     return jsonify({"status": "ok"}), 200
 
