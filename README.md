@@ -1,1 +1,0 @@
-# production-grade_multi-environment_devops_platform
