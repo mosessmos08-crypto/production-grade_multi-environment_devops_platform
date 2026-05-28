@@ -56,7 +56,7 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             IMAGE="mosesclouddev/devops-app"
-            # ✅ Use stable 'staging-latest' tag — not SHA (SHA changes per branch)
+            #  Use stable 'staging-latest' tag — not SHA (SHA changes per branch)
             DEPLOY_TAG="staging-latest"
 
             # ── Install Docker if missing ──
@@ -72,7 +72,7 @@ jobs:
             # ── Pull new image ──
             echo "Pulling new image: $IMAGE:$DEPLOY_TAG"
             if ! sudo docker pull $IMAGE:$DEPLOY_TAG; then
-              echo "❌ Image pull failed! Aborting deploy."
+              echo " Image pull failed! Aborting deploy."
               exit 1
             fi
 
@@ -91,7 +91,7 @@ jobs:
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/health || echo "000")
               echo "Attempt $i — HTTP $STATUS"
               if [ "$STATUS" = "200" ]; then
-                echo "✅ Health check passed!"
+                echo " Health check passed!"
                 HEALTH_PASSED=true
                 break
               fi
@@ -99,16 +99,16 @@ jobs:
 
             # ── Rollback if health check failed ──
             if [ "$HEALTH_PASSED" = "false" ]; then
-              echo "❌ Health check failed! Rolling back to: $PREVIOUS_IMAGE"
+              echo " Health check failed! Rolling back to: $PREVIOUS_IMAGE"
               sudo docker stop devops-app || true
               sudo docker rm devops-app || true
 
               if [ "$PREVIOUS_IMAGE" != "none" ]; then
                 sudo docker pull $PREVIOUS_IMAGE
                 sudo docker run -d -p 5000:5000 --name devops-app --restart always $PREVIOUS_IMAGE
-                echo "⏪ Rollback complete — running $PREVIOUS_IMAGE"
+                echo " Rollback complete — running $PREVIOUS_IMAGE"
               else
-                echo "⚠️ No previous image found. Manual intervention required."
+                echo " No previous image found. Manual intervention required."
               fi
 
               exit 1  # Mark job FAILED in GitHub
@@ -131,7 +131,7 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             IMAGE="mosesclouddev/devops-app"
-            # ✅ Prod uses 'latest' tag — stable, pushed from dev build
+            #  Prod uses 'latest' tag — stable, pushed from dev build
             DEPLOY_TAG="latest"
 
             # ── Install Docker if missing ──
@@ -147,7 +147,7 @@ jobs:
             # ── Pull new image ──
             echo "Pulling new image: $IMAGE:$DEPLOY_TAG"
             if ! sudo docker pull $IMAGE:$DEPLOY_TAG; then
-              echo "❌ Image pull failed! Aborting deploy."
+              echo " Image pull failed! Aborting deploy."
               exit 1
             fi
 
@@ -166,7 +166,7 @@ jobs:
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/health || echo "000")
               echo "Attempt $i — HTTP $STATUS"
               if [ "$STATUS" = "200" ]; then
-                echo "✅ Health check passed!"
+                echo " Health check passed!"
                 HEALTH_PASSED=true
                 break
               fi
@@ -174,16 +174,16 @@ jobs:
 
             # ── Rollback if health check failed ──
             if [ "$HEALTH_PASSED" = "false" ]; then
-              echo "❌ Health check failed! Rolling back to: $PREVIOUS_IMAGE"
+              echo " Health check failed! Rolling back to: $PREVIOUS_IMAGE"
               sudo docker stop devops-app || true
               sudo docker rm devops-app || true
 
               if [ "$PREVIOUS_IMAGE" != "none" ]; then
                 sudo docker pull $PREVIOUS_IMAGE
                 sudo docker run -d -p 5000:5000 --name devops-app --restart always $PREVIOUS_IMAGE
-                echo "⏪ Rollback complete — running $PREVIOUS_IMAGE"
+                echo " Rollback complete — running $PREVIOUS_IMAGE"
               else
-                echo "⚠️ No previous image found. Manual intervention required."
+                echo " No previous image found. Manual intervention required."
               fi
 
               exit 1  # Mark job FAILED in GitHub
