@@ -9,7 +9,7 @@ on:
 
 jobs:
 
-  # BUILD & PUSH IMAGE (DEV ONLY)
+  # ─── BUILD & PUSH (DEV ONLY) ──────────────────────────────────────
   build:
     if: github.ref_name == 'dev'
     runs-on: ubuntu-latest
@@ -20,66 +20,171 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Build Docker Image
-        run: docker build -t mosesclouddev/devops-app:${{ github.sha }} .
-
       - name: Login to Docker Hub
         run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
+      - name: Build Docker Image
+        run: docker build -t mosesclouddev/devops-app:${{ github.sha }} .
+
       - name: Push Image
         run: |
-          docker tag mosesclouddev/devops-app:${{ github.sha }} mosesclouddev/devops-app:latest
+          # Push SHA tag (for traceability) and stable tags
           docker push mosesclouddev/devops-app:${{ github.sha }}
+
+          # Also tag as 'staging-latest' — this is what staging will pull
+          docker tag mosesclouddev/devops-app:${{ github.sha }} mosesclouddev/devops-app:staging-latest
+          docker push mosesclouddev/devops-app:staging-latest
+
+          # Also tag as 'latest' for prod
+          docker tag mosesclouddev/devops-app:${{ github.sha }} mosesclouddev/devops-app:latest
           docker push mosesclouddev/devops-app:latest
 
 
-  # DEPLOY TO STAGING (push to staging branch)
+  # ─── DEPLOY TO STAGING ────────────────────────────────────────────
   deploy-staging:
-    if: github.ref_name == 'staging'   # ✅ No 'needs: build' — different branch entirely
+    if: github.ref_name == 'staging'
     runs-on: ubuntu-latest
     environment:
       name: staging
 
     steps:
-      - name: Deploy to Staging EC2
+      - name: Deploy to Staging EC2 (with Rollback)
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.STAGE_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            IMAGE="mosesclouddev/devops-app:latest"
+            IMAGE="mosesclouddev/devops-app"
+            # ✅ Use stable 'staging-latest' tag — not SHA (SHA changes per branch)
+            DEPLOY_TAG="staging-latest"
+
+            # ── Install Docker if missing ──
             if ! command -v docker &> /dev/null; then
               sudo yum update -y && sudo yum install -y docker
             fi
             sudo systemctl start docker && sudo systemctl enable docker
+
+            # ── Save currently running image for rollback ──
+            PREVIOUS_IMAGE=$(sudo docker inspect --format='{{.Config.Image}}' devops-app 2>/dev/null || echo "none")
+            echo "Previous image: $PREVIOUS_IMAGE"
+
+            # ── Pull new image ──
+            echo "Pulling new image: $IMAGE:$DEPLOY_TAG"
+            if ! sudo docker pull $IMAGE:$DEPLOY_TAG; then
+              echo "❌ Image pull failed! Aborting deploy."
+              exit 1
+            fi
+
+            # ── Stop & remove old container ──
             sudo docker stop devops-app || true
             sudo docker rm devops-app || true
-            sudo docker pull $IMAGE
-            sudo docker run -d -p 5000:5000 --name devops-app --restart always $IMAGE
+
+            # ── Run new container ──
+            sudo docker run -d -p 5000:5000 --name devops-app --restart always $IMAGE:$DEPLOY_TAG
+
+            # ── Health Check (5 retries × 10s) ──
+            echo "Running health check..."
+            HEALTH_PASSED=false
+            for i in {1..5}; do
+              sleep 10
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/health || echo "000")
+              echo "Attempt $i — HTTP $STATUS"
+              if [ "$STATUS" = "200" ]; then
+                echo "✅ Health check passed!"
+                HEALTH_PASSED=true
+                break
+              fi
+            done
+
+            # ── Rollback if health check failed ──
+            if [ "$HEALTH_PASSED" = "false" ]; then
+              echo "❌ Health check failed! Rolling back to: $PREVIOUS_IMAGE"
+              sudo docker stop devops-app || true
+              sudo docker rm devops-app || true
+
+              if [ "$PREVIOUS_IMAGE" != "none" ]; then
+                sudo docker pull $PREVIOUS_IMAGE
+                sudo docker run -d -p 5000:5000 --name devops-app --restart always $PREVIOUS_IMAGE
+                echo "⏪ Rollback complete — running $PREVIOUS_IMAGE"
+              else
+                echo "⚠️ No previous image found. Manual intervention required."
+              fi
+
+              exit 1  # Mark job FAILED in GitHub
+            fi
 
 
-  # DEPLOY TO PROD (push to prod branch )
+  # ─── DEPLOY TO PROD ───────────────────────────────────────────────
   deploy-prod:
-    if: github.ref_name == 'prod'   # ✅ No 'needs: deploy-staging' — different branch
+    if: github.ref_name == 'prod'
     runs-on: ubuntu-latest
     environment:
       name: prod
 
     steps:
-      - name: Deploy to Production EC2
+      - name: Deploy to Production EC2 (with Rollback)
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.PROD_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            IMAGE="mosesclouddev/devops-app:latest"
+            IMAGE="mosesclouddev/devops-app"
+            # ✅ Prod uses 'latest' tag — stable, pushed from dev build
+            DEPLOY_TAG="latest"
+
+            # ── Install Docker if missing ──
             if ! command -v docker &> /dev/null; then
               sudo yum update -y && sudo yum install -y docker
             fi
             sudo systemctl start docker && sudo systemctl enable docker
+
+            # ── Save currently running image for rollback ──
+            PREVIOUS_IMAGE=$(sudo docker inspect --format='{{.Config.Image}}' devops-app 2>/dev/null || echo "none")
+            echo "Previous image: $PREVIOUS_IMAGE"
+
+            # ── Pull new image ──
+            echo "Pulling new image: $IMAGE:$DEPLOY_TAG"
+            if ! sudo docker pull $IMAGE:$DEPLOY_TAG; then
+              echo "❌ Image pull failed! Aborting deploy."
+              exit 1
+            fi
+
+            # ── Stop & remove old container ──
             sudo docker stop devops-app || true
             sudo docker rm devops-app || true
-            sudo docker pull $IMAGE
-            sudo docker run -d -p 5000:5000 --name devops-app --restart always $IMAGE
+
+            # ── Run new container ──
+            sudo docker run -d -p 5000:5000 --name devops-app --restart always $IMAGE:$DEPLOY_TAG
+
+            # ── Health Check (5 retries × 10s) ──
+            echo "Running health check..."
+            HEALTH_PASSED=false
+            for i in {1..5}; do
+              sleep 10
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/health || echo "000")
+              echo "Attempt $i — HTTP $STATUS"
+              if [ "$STATUS" = "200" ]; then
+                echo "✅ Health check passed!"
+                HEALTH_PASSED=true
+                break
+              fi
+            done
+
+            # ── Rollback if health check failed ──
+            if [ "$HEALTH_PASSED" = "false" ]; then
+              echo "❌ Health check failed! Rolling back to: $PREVIOUS_IMAGE"
+              sudo docker stop devops-app || true
+              sudo docker rm devops-app || true
+
+              if [ "$PREVIOUS_IMAGE" != "none" ]; then
+                sudo docker pull $PREVIOUS_IMAGE
+                sudo docker run -d -p 5000:5000 --name devops-app --restart always $PREVIOUS_IMAGE
+                echo "⏪ Rollback complete — running $PREVIOUS_IMAGE"
+              else
+                echo "⚠️ No previous image found. Manual intervention required."
+              fi
+
+              exit 1  # Mark job FAILED in GitHub
+            fi
